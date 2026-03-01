@@ -1,0 +1,37 @@
+{
+    "name": "extension-crash-reporter",
+    "version": "0.1.0",
+    "description": "Crash reporting for Chrome extensions — error collection, stack trace parsing, crash frequency tracking, and diagnostic snapshots for MV3.",
+    "author": "Zovo <hello@zovo.one>",
+    "license": "MIT",
+    "keywords": [
+        "chrome-extension",
+        "crash",
+        "error",
+        "reporter",
+        "stack-trace",
+        "diagnostics",
+        "manifest-v3",
+        "browser-extension",
+        "monitoring"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/theluckystrike/extension-crash-reporter.git"
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "prepublishOnly": "npm run build"
+    },
+    "devDependencies": {
+        "@types/chrome": "^0.0.260",
+        "typescript": "^5.3.3"
+    }
+}
