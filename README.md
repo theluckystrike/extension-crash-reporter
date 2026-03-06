@@ -1,144 +1,157 @@
-# extension-crash-reporter — Crash Reporting for Chrome Extensions
+# extension-crash-reporter
 
 [![npm](https://img.shields.io/npm/v/extension-crash-reporter.svg)](https://www.npmjs.com/package/extension-crash-reporter)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-green.svg)]()
 
-> **Built by [Zovo](https://zovo.one)** — error tracking across 18+ Chrome extensions
+Lightweight crash reporting for Chrome extensions. Captures uncaught errors and unhandled promise rejections, deduplicates them by message, tracks frequency, and persists everything to chrome.storage. Built for Manifest V3. Zero runtime dependencies.
 
-**Error collection, deduplication, frequency tracking, and storage persistence** for Chrome extensions. Zero runtime dependencies.
-
-## 📦 Install
+INSTALL
 
 ```bash
 npm install extension-crash-reporter
 ```
 
-## 🚀 Quick Start
+QUICK START
 
 ```typescript
 import { CrashReporter } from 'extension-crash-reporter';
 
-// Install global error handler
 const reporter = new CrashReporter().install();
 
-// Report errors manually
+// errors and unhandled rejections are now captured automatically
+
+// manually capture something
 try {
     await riskyOperation();
-} catch (error) {
-    reporter.report(error);
+} catch (err) {
+    reporter.capture(err.message, err.stack);
 }
 
-// Get top crashes
-const top = reporter.getTopCrashes(5);
-/*
-[
-  { error: 'TypeError: Cannot read...', count: 42 },
-  { error: 'RangeError: Invalid...', count: 15 }
-]
-*/
-
-// Save to storage
+// persist to chrome.storage.local
 await reporter.save();
 ```
 
-## ✨ Features
+HOW IT WORKS
 
-### Automatic Error Capture
+When you call `install()`, the reporter attaches listeners for the global `error` and `unhandledrejection` events. Each captured error is stored with its message, stack trace, timestamp, extension version (read from `chrome.runtime.getManifest`), current URL, and a hit count.
+
+If the same error message appears again, the existing entry gets its count incremented and its timestamp updated instead of creating a duplicate. The reporter keeps a configurable maximum number of reports (default 50) and drops the oldest entry when the limit is reached.
+
+CONSTRUCTOR
 
 ```typescript
-const reporter = new CrashReporter().install();
-
-// Catches unhandled errors and unhandled promise rejections
-window.addEventListener('error', (event) => {
-    reporter.report(event.error);
-});
-
-window.addEventListener('unhandledrejection', (event) => {
-    reporter.report(event.reason);
-});
+const reporter = new CrashReporter(maxReports?, storageKey?);
 ```
 
-### Deduplication
+`maxReports` controls how many crash entries are retained before the oldest is evicted. Defaults to 50.
+
+`storageKey` is the key used in chrome.storage.local for persistence. Defaults to `__crash_reports__`.
+
+API
+
+`install()` returns `this`
+Attaches global error and unhandledrejection listeners. Chainable so you can create and install in one line.
+
+`capture(message, stack?)` returns `void`
+Records an error. If an entry with the same message already exists, increments its count and refreshes its timestamp. Otherwise pushes a new CrashReport with the current extension version and page URL.
+
+`getReports()` returns `CrashReport[]`
+Returns a shallow copy of all stored crash reports.
+
+`getTopCrashes(count?)` returns `CrashReport[]`
+Returns the top N crashes sorted by frequency (highest count first). Defaults to 5.
+
+`save()` returns `Promise<void>`
+Writes the current reports array to chrome.storage.local under the configured key.
+
+`load()` returns `Promise<void>`
+Reads reports from chrome.storage.local and replaces the in-memory array.
+
+`clear()` returns `void`
+Empties the in-memory reports array.
+
+`export()` returns `string`
+Serializes all reports as pretty-printed JSON.
+
+`countSince(timestamp)` returns `number`
+Returns the total crash count (summing individual counts) for all reports with a timestamp at or after the given value.
+
+CRASH REPORT SHAPE
 
 ```typescript
-// Group similar errors together
-const reporter = new CrashReporter({
-    deduplicate: true  // Default: true
-});
-
-// Two similar errors counted as one
-reporter.report(new Error('Cannot read property of undefined'));
-reporter.report(new Error('Cannot read property of undefined'));
-// count = 1 (deduplicated)
-```
-
-### Frequency Tracking
-
-```typescript
-// Track how often each error occurs
-const top = reporter.getTopCrashes(10);
-
-// Get error counts
-const stats = reporter.getStats();
-/*
-{
-  totalErrors: 57,
-  uniqueErrors: 12,
-  lastError: Date
+interface CrashReport {
+    message: string;
+    stack: string;
+    timestamp: number;
+    version: string;
+    url: string;
+    count: number;
 }
-*/
 ```
 
-### Storage Persistence
+EXAMPLES
+
+Background service worker
 
 ```typescript
-// Auto-save to chrome.storage
-const reporter = new CrashReporter({ persist: true });
+import { CrashReporter } from 'extension-crash-reporter';
 
-// Load on startup
+const reporter = new CrashReporter(100).install();
+
+chrome.runtime.onInstalled.addListener(async () => {
+    await reporter.load();
+});
+
+chrome.runtime.onSuspend.addListener(async () => {
+    await reporter.save();
+});
+```
+
+Popup crash summary
+
+```typescript
+import { CrashReporter } from 'extension-crash-reporter';
+
+const reporter = new CrashReporter();
 await reporter.load();
 
-// Clear old errors
-await reporter.clear();
+const recent = reporter.countSince(Date.now() - 86400000);
+console.log(`Crashes in the last 24 hours: ${recent}`);
+
+const top = reporter.getTopCrashes(3);
+top.forEach(r => console.log(`${r.message} (${r.count}x)`));
 ```
 
-### Error Context
+Export diagnostics to clipboard
 
 ```typescript
-// Add context to errors
-reporter.report(error, {
-    userId: 'user123',
-    page: '/popup.html',
-    action: 'saveSettings'
-});
+const json = reporter.export();
+await navigator.clipboard.writeText(json);
 ```
 
-## API Reference
+REQUIREMENTS
 
-### `CrashReporter`
+- Chrome extension environment with Manifest V3
+- chrome.storage permission in your manifest.json for save/load
+- TypeScript 5.0+ (or use the compiled JS from dist/)
 
-| Method | Description |
-|--------|-------------|
-| `install()` | Install global error handlers |
-| `report(error, context?)` | Report an error |
-| `getTopCrashes(n)` | Get N most common errors |
-| `getStats()` | Get error statistics |
-| `save()` | Persist to storage |
-| `load()` | Load from storage |
-| `clear()` | Clear all errors |
+DEVELOPMENT
 
-### Options
-
-```typescript
-interface CrashReporterOptions {
-    deduplicate?: boolean;   // Group similar errors (default: true)
-    persist?: boolean;      // Auto-save to storage (default: false)
-    maxErrors?: number;      // Max errors to track (default: 100)
-}
+```bash
+git clone https://github.com/theluckystrike/extension-crash-reporter.git
+cd extension-crash-reporter
+npm install
+npm run build
 ```
 
-## 📄 License
+CONTRIBUTING
 
-MIT — [Zovo](https://zovo.one)
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting issues and pull requests.
+
+LICENSE
+
+MIT. See [LICENSE](LICENSE) for the full text.
+
+Built by [theluckystrike](https://github.com/theluckystrike) / [zovo.one](https://zovo.one)
